@@ -32,5 +32,11 @@ class ScreenSelect(tk.Toplevel):
 
     def on_button_release(self, event):
         self.end_x, self.end_y = (event.x, event.y)
+        
+        # Ensure the coordinates are correctly ordered
+        x1, x2 = sorted([self.begin_x, self.end_x])
+        y1, y2 = sorted([self.begin_y, self.end_y])
+        
+        # Now, x1, y1 are the top-left coordinates, and x2, y2 are the bottom-right coordinates
         self.destroy()
-        self.callback(self.begin_x, self.begin_y, self.end_x, self.end_y)
+        self.callback(x1, y1, x2, y2)

@@ -12,6 +12,7 @@ from PIL import ImageGrab
 import pytesseract
 from google.cloud import texttospeech
 from config import TESSERACT_PATH, GOOGLE_CREDENTIALS_PATH
+import keyboard
 
 anthropic_client = anthropic.Anthropic(
     api_key = os.getenv('ANTHROPIC_API_KEY'),
@@ -21,14 +22,17 @@ pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_CREDENTIALS_PATH
 gtts_client = texttospeech.TextToSpeechClient()
 
+defaultPrompt = "Translate the following text to Danish accurately, without adding any comments, interpretations, or responses beyond the translation itself."
+
 class TextReaderApp:
     def __init__(self):
-            self.master = tk.Tk()
-            self.master.title("TextReader")
-            pygame.mixer.init()
-            self.setup_ui()
-            self.temp_files = []
-            atexit.register(self.cleanup_temp_files)
+        self.master = tk.Tk()
+        self.master.title("TextReader")
+        pygame.mixer.init()
+        self.setup_ui()
+        self.temp_files = []
+        atexit.register(self.cleanup_temp_files)
+        self.register_global_hotkey()
 
     def setup_ui(self):
         tk.Button(self.master, text="Select Region and Read Text", command=self.select_and_read).pack()
@@ -51,14 +55,14 @@ class TextReaderApp:
         self.scrollbar.config(command=self.system_text_widget.yview)
         
         # Insert default value
-        self.system_text_widget.insert(tk.END, "Translate the text into danish, making it as close as possible.")
+        self.system_text_widget.insert(tk.END, defaultPrompt)
         
         # Automatically adjust height up to a maximum
         self.system_text_widget.bind('<KeyRelease>', lambda e: self.adjust_text_widget_height())
 
         # Language Selection
         self.language_var = tk.StringVar(self.master)
-        self.language_options = ["en-US", "en-GB", "fr-FR", "de-DE", "da-DK"]  # Example languages
+        self.language_options = ["da-DK", "en-US", "en-GB", "fr-FR", "de-DE"]  # Example languages
         tk.Label(self.master, text="Language:").pack()
         tk.OptionMenu(self.master, self.language_var, *self.language_options).pack() 
         self.language_var.set(self.language_options[0])  # Default language
@@ -84,8 +88,6 @@ class TextReaderApp:
         new_height = min(current_lines + 1, max_height)  # Add 1 to consider the current line being edited
         self.system_text_widget.config(height=new_height)
 
-
-
     def stop_playback(self):
         pygame.mixer.music.stop()
 
@@ -96,11 +98,23 @@ class TextReaderApp:
             except Exception as e:
                 print(f"Could not delete temporary file {file_path}: {e}")
 
-
     def select_and_read(self):
+        # Set the window to always be on top
+        self.master.attributes("-topmost", True)
+
+        self.master.update()  # Ensure the window update is applied immediately
+        self.master.focus_force()  # Attempt to force focus again with the window now on top
         self.master.withdraw()
+
         selector = ScreenSelect(self.process_selection, master=self.master)
         self.master.wait_window(selector)
+        
+        # Once selection is done, make the window normal (not always on top)
+        self.master.attributes("-topmost", False)
+
+    def register_global_hotkey(self):
+        # Register the global hotkey
+        keyboard.add_hotkey('ctrl+shift+ø', self.select_and_read, suppress=True)
 
     def get_screen_text(self, x1, y1, x2, y2):
         screen_capture = ImageGrab.grab(bbox=(x1, y1, x2, y2))
@@ -128,23 +142,24 @@ class TextReaderApp:
     def get_anthropic_response(self, message):
         system_instruction = self.system_text_widget.get("1.0", "end-1c")  # Get text from the entry widget
 
+        print(message)
+
         try:
             message = anthropic_client.messages.create(
-                model="claude-3-opus-20240229",
+                model="claude-3-haiku-20240307",
                 max_tokens=100,
                 temperature=0.0,
-                system= "keep it short and mimic the original" + system_instruction,
+                system= "keep it short and " + system_instruction,
                 messages=[
                         {"role": "user", "content": message }
                 ]
             )
 
             print(message.content[0].text)
-
             return message.content[0].text
         except Exception as err:
             print(f"An error occurred: {err}")
-        return "I'm sorry, I couldn't process your request."
+            return "I'm sorry, I couldn't process your request."
 
     def process_selection(self, x1, y1, x2, y2):
         text = self.get_screen_text(x1, y1, x2, y2)
